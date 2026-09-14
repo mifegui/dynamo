@@ -216,7 +216,7 @@ class PrometheusQueryClient(Protocol):
 
 
 class _AsyncRedisClient(Protocol):
-    async def eval(self, script: str, numkeys: int, *keys_and_args: object) -> object:
+    def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Awaitable[Any]:
         ...
 
     async def aclose(self) -> None:
@@ -466,7 +466,7 @@ class LlmdAsyncOpenMetricsSource:
 
     def _collect_pool(
         self,
-        payload: str,
+        payload: OpenMetricsSamples,
         pool_id: str,
         observed_at_s: float,
         request_start_mono_s: float,
@@ -1320,8 +1320,8 @@ class RedisLeasedDrainLimitActuator:
         )
 
     async def _eval_with_retry(
-        self, script: str, control_key: str, fence_key: str, *args: object
-    ) -> object:
+        self, script: str, control_key: str, fence_key: str, *args: Any
+    ) -> Any:
         for attempt in range(2):
             try:
                 return await self._client.eval(
