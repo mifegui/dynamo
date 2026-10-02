@@ -8802,6 +8802,7 @@ mod tests {
                 },
                 nvext: None,
                 llm_metrics: None,
+                tool_call_completion: Vec::new(),
             }),
             id: Some("msg-1".to_string()),
             event: None,
@@ -9452,6 +9453,7 @@ mod tests {
                 },
                 nvext: None,
                 llm_metrics: None,
+                tool_call_completion: Vec::new(),
             }),
             id: Some("msg-1".to_string()),
             event: None,
@@ -9542,6 +9544,7 @@ mod tests {
                 },
                 nvext: None,
                 llm_metrics: None,
+                tool_call_completion: Vec::new(),
             }),
             id: Some("msg-1".to_string()),
             event: None,
@@ -9953,6 +9956,7 @@ mod tests {
             },
             nvext: None,
             llm_metrics: None,
+            tool_call_completion: Vec::new(),
         };
         Annotated {
             id: Some("test-id".to_string()),
@@ -10587,6 +10591,7 @@ mod tests {
             },
             nvext: None,
             llm_metrics: None,
+            tool_call_completion: Vec::new(),
         }
     }
 
