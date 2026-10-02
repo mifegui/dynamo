@@ -87,6 +87,8 @@ These fields are shared between a standalone DCD and each entry of a DGD `spec.c
     </ParamField>
   </Indent>
 
+  Role templates using compatible images can declare `LPX_RUNTIME_CONTRACT=manifest-v1` on every `main` container in a workload. This explicit migration removes LPX runtime ConfigMaps. The operator publishes ordered compiler source IDs or collapsed chain roots through `LPX_REMOTE_PARTITION_IDS`, with `LPX_MODEL_PATH`, on Agents and Cyborg. Nova receives independent per-model `NOVA_REMOTE_PARTITION_IDS` or `NOVA_DRAFT_REMOTE_PARTITION_IDS` and `NOVA_TARGET_REMOTE_PARTITION_IDS`. Entrypoints resolve the selected artifacts and host counts from the manifest; they do not choose another subset. Cyborg also receives `LPX_AGENT_HOST_TEMPLATE` for leader naming. An explicitly empty remote list selects no remote partitions. Templates without the marker retain the legacy contract for existing images. Update images and remove configuration mounts, directory settings, Quasar's `--partition-metadata`, and Cyborg's `--expand-hosts` before opting in.
+
   <ParamField path="experimental" type="LPXExperimentalSpec">
     Groups opt-in LPX options whose shape may change incompatibly between v1beta1 releases. These fields are not covered by the v1beta1 deprecation policy.
   </ParamField>
