@@ -6,6 +6,7 @@
 package lpx
 
 import (
+	"strings"
 	"testing"
 
 	dynamov1beta1 "github.com/ai-dynamo/dynamo/deploy/operator/api/v1beta1"
@@ -108,7 +109,7 @@ func TestProjectModelV2LocalPartitions(t *testing.T) {
 			require.Equal(t, test.wantAgents, projection.AgentReplicas())
 
 			t.Log("Publish only remote runtime partitions to Agents and Cyborg")
-			require.Equal(t, test.wantRuntimeIDs, resolvedPartitionData([]*ModelProjection{projection})["partition_ids"])
+			require.Equal(t, test.wantRuntimeIDs, strings.ReplaceAll(runtimePartitionIDs(projection), ",", "\n"))
 			require.Equal(t, test.wantLocalIDs, projection.localPartitionIDs)
 
 			t.Log("Change the workload digest when partitions move to the GPU")

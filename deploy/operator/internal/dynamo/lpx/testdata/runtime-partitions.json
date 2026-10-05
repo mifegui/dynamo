@@ -595,5 +595,45 @@
     "chains": [],
     "hybrid": true,
     "error": "invalid XT chip/device"
+  },
+  {
+    "name": "physical chain preserves operator order",
+    "artifacts": [
+      {
+        "id": 2,
+        "path": "part-2",
+        "chips": 8,
+        "devices": 8
+      },
+      {
+        "id": 7,
+        "path": "part-7",
+        "chips": 8,
+        "devices": 8
+      }
+    ],
+    "chains": [
+      [
+        7,
+        2
+      ]
+    ],
+    "selected": [
+      7,
+      2
+    ],
+    "hybrid": false,
+    "expected": [
+      {
+        "source_partition_id": 7,
+        "relative_path": "part-7",
+        "node_count": 1
+      },
+      {
+        "source_partition_id": 2,
+        "relative_path": "part-2",
+        "node_count": 1
+      }
+    ]
   }
 ]

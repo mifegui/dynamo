@@ -91,29 +91,27 @@ configuration requirement.
 
 #### LPX runtime contract migration
 
-LPX role templates can opt into `LPX_RUNTIME_CONTRACT=manifest-v1` on each
-`main` container. Update the Agent and conductor images to versions supporting
-this contract before opting in, and migrate every role in a workload together.
-Remove the runtime `config` volume mounts, `NOVA_*RESOLVED_PARTITIONS_DIR`,
-`LPU_CONFIG_DIR`, Quasar's `--partition-metadata`, and Cyborg's `--expand-hosts`.
-The operator then emits no LPX runtime ConfigMaps or ConfigMap-specific hashes.
+LPX always uses manifest-backed runtime selection. This is a breaking change:
+upgrade the Agent, Nova, and Cyborg images and their templates together with the
+operator. There is no legacy ConfigMap reader or writer. Remove runtime `config`
+volume mounts, `NOVA_*RESOLVED_PARTITIONS_DIR`, `LPU_CONFIG_DIR`, Quasar's
+`--partition-metadata`, Cyborg's `--expand-hosts`, host-file renderers, and
+`LPX_RUNTIME_CONTRACT` from role templates.
 
 The operator supplies ordered compiler source IDs in `LPX_REMOTE_PARTITION_IDS`
 and a model path on each Agent and Cyborg clique. Collapsed XT prop-sync chains
 use their root ID. Nova receives the same selection through its per-model
 `NOVA_REMOTE_PARTITION_IDS`, or independent `NOVA_DRAFT_REMOTE_PARTITION_IDS` and
-`NOVA_TARGET_REMOTE_PARTITION_IDS`. Runtime startup resolves artifacts and host
-counts from the binary manifest. Cyborg receives `LPX_AGENT_HOST_TEMPLATE` for
-its partition leaders and retains `LPX_LOCAL_PARTITION_IDS` for GPU execution.
-An explicitly empty remote selection means no remote partitions or Agent Pods;
-it must never fall back to the manifest's default selection.
+`NOVA_TARGET_REMOTE_PARTITION_IDS`. Native runtimes resolve artifacts and host
+counts from the binary manifest. Cyborg receives a full DNS template in
+`LPX_AGENT_HOST_TEMPLATE` for its partition leaders and retains
+`LPX_LOCAL_PARTITION_IDS` for GPU execution. An explicitly empty remote
+selection means no remote partitions or Agent Pods; it does not select defaults.
 
-Unchanged templates without the marker retain the legacy output and do not roll
-on an operator-only upgrade. The compatibility writer and readers remain until
-all legacy templates and runtime images have migrated. A migrated workload rolls
-through the normal template and workload identity checks; old owned ConfigMaps
-are removed by desired-resource reconciliation. Roll back images and templates
-as a unit, removing the marker and restoring legacy options for older images.
+Template and compiler/workload identity changes still trigger rollouts. Existing
+runtime ConfigMaps are unused and can be deleted after migration. The operator
+no longer watches or reconciles them. Roll back the operator, runtime images,
+and role templates together if older images are required.
 
 #### Dependency compatibility
 

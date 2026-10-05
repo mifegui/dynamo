@@ -6,52 +6,12 @@
 package lpx
 
 import (
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
-
-const runtimeContractEnv = "LPX_RUNTIME_CONTRACT"
-const manifestRuntimeContract = "manifest-v1"
-
-// manifestRuntime is an explicit image/template compatibility declaration. Missing
-// declarations retain the legacy runtime until the workload is migrated as a unit.
-func manifestRuntime(spec corev1.PodSpec) (bool, error) {
-	selected := false
-	for _, container := range spec.Containers {
-		if container.Name != "main" {
-			continue
-		}
-		for _, variable := range container.Env {
-			if variable.Name != runtimeContractEnv {
-				continue
-			}
-			if variable.ValueFrom != nil || variable.Value != manifestRuntimeContract {
-				return false, fmt.Errorf("%s must be the literal %q", runtimeContractEnv, manifestRuntimeContract)
-			}
-			selected = true
-		}
-	}
-	// Opted-in templates must not retain paths that only the compatibility writer supplies.
-	if selected {
-		for _, container := range spec.Containers {
-			for _, mount := range container.VolumeMounts {
-				if mount.Name == lpuConfigVolumeName {
-					return false, fmt.Errorf("manifest-v1 templates must remove the %s mount", lpuConfigVolumeName)
-				}
-			}
-			for _, variable := range container.Env {
-				if variable.Name == "LPU_CONFIG_DIR" || strings.HasSuffix(variable.Name, "RESOLVED_PARTITIONS_DIR") {
-					return false, fmt.Errorf("manifest-v1 templates must remove %s", variable.Name)
-				}
-			}
-		}
-	}
-	return selected, nil
-}
 
 // runtimePartitionIDs preserves the operator's final runtime order after local
 // filtering, CPU embedding placement and pipeline-specific prop-sync handling.
