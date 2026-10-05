@@ -221,7 +221,6 @@ impl Node {
         self.anchor
     }
 
-    /// Borrows a child for the life of `guard`; see [`NodeChildren::get_ref`].
     pub(super) fn child_ref<'g>(
         &'g self,
         local_hash: LocalBlockHash,
