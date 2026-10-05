@@ -4951,6 +4951,7 @@ mod tests {
                 },
                 nvext: None,
                 llm_metrics,
+                tool_call_completion: Vec::new(),
             };
             Annotated {
                 data: Some(response),
