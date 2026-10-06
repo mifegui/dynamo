@@ -2963,7 +2963,7 @@ func newGrovePodCliqueSet(
 	// KAI-Scheduler is injected later on each clique via schedulerName and queue label.
 	injectVolcanoQueueAnnotation(gangSet, dynamoDeployment.Annotations, runtimeConfig)
 	gangSet.Spec.Replicas = 1
-	updateStrategy, err := resolveGroveUpdateStrategy(dynamoDeployment)
+	updateStrategy, err := ResolveGroveUpdateStrategy(dynamoDeployment)
 	if err != nil {
 		return nil, err
 	}
@@ -3022,8 +3022,8 @@ func shouldGateGroveScalingGroupReplicas(checkpointInfo *checkpoint.CheckpointIn
 		!checkpointInfo.Ready
 }
 
-// resolveGroveUpdateStrategy selects the PCS strategy from a non-nil DGD.
-func resolveGroveUpdateStrategy(dgd *v1beta1.DynamoGraphDeployment) (*grovev1alpha1.UpdateStrategyType, error) {
+// ResolveGroveUpdateStrategy selects the PCS strategy from a non-nil DGD.
+func ResolveGroveUpdateStrategy(dgd *v1beta1.DynamoGraphDeployment) (*grovev1alpha1.UpdateStrategyType, error) {
 	value, ok := dgd.Annotations[commonconsts.KubeAnnotationGroveUpdateStrategy]
 	// Coordinate typed prefill and decode components unless explicitly overridden.
 	if !ok {

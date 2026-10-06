@@ -85,6 +85,14 @@ rejected on updates.
 
 **Action:** Install Grove v0.1.0-alpha.14 before upgrading the Dynamo operator. Coherent updates coordinate rollout progress across components, use no surge capacity, and block scaling during an active rollout. To retain the previous strategy, set `metadata.annotations["nvidia.com/grove-update-strategy"]: RollingRecreate` on the DGD before upgrading.
 
+##### Per-component Grove rollout budgets
+
+**Change:** Component-level `providerOverride.value` now accepts `rollingUpdate.maxUnavailable`, alone or alongside `topologyConstraint`. Admission infers an omitted target, and Dynamo applies the budget to the generated standalone clique or owning scaling group. Graph-root and multinode role overrides remain topology-only. Requires Grove v0.1.0-alpha.14.
+
+**Affected:** Grove-backed DGDs that explicitly opt into a rollout budget. Existing workloads keep Grove's defaults when the override is absent: `minAvailable` for Coherent and `1` for RollingRecreate. Budget-only edits preserve worker hashes and pod templates and do not initiate a workload rollout.
+
+**Action:** Set a positive integer no greater than the component's desired replicas, and at least `minAvailable` under Coherent. Lower or remove it before scaling below that budget; remove the rollout fragment before scaling to zero or selecting OnDelete. See the [DGD reference](https://github.com/ai-dynamo/dynamo/blob/main/docs/fern/pages/reference/kubernetes-api/dynamo-graph-deployment.mdx#grove-rollout-budget-overrides) for a complete P/D example and scope rules.
+
 ##### Frontend sidecar identity in container discovery mode
 
 **Change:** The operator now sets `CONTAINER_NAME` to the container selected by
