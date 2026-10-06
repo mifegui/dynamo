@@ -34,6 +34,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Live prefixes are confirmed (daemon ack plus TP vote) in batches: after this
+# many output calls since the oldest unconfirmed publication, or once this many
+# publications are pending. Both count lockstep output calls, so every rank
+# votes at the same point.
+_LIVE_CONFIRM_CALLS = 16
+_LIVE_CONFIRM_BATCH = 8
+
 _publication_gate_installed = False
 _original_process_batch_result = None
 _original_stream_output = None
@@ -238,8 +245,10 @@ def make_gms_unified_cache_class():
             self._gms_fresh_insert = None
             self._gms_publication_batch_depth = 0
             self._gms_pending_publications = []
-            # (digest, [(req, sealed_len)], local error) awaiting TP confirmation.
-            self._gms_live_unconfirmed = None
+            # Live publications awaiting TP confirmation, and the output-call
+            # counter that schedules it identically on every rank.
+            self._gms_live_unconfirmed = []
+            self._gms_live_calls = 0
             self._gms_local_pages_by_hash: dict[bytes, int] = {}
             self._gms_local_hashes_by_page: dict[int, set[bytes]] = {}
             self._gms_retained_order: dict[int, None] = {}
@@ -931,7 +940,8 @@ def make_gms_unified_cache_class():
             self._gms_recovery_candidates.clear()
             self._gms_pending_publications.clear()
             self._gms_publication_batch_depth = 0
-            self._gms_live_unconfirmed = None
+            self._gms_live_unconfirmed = []
+            self._gms_live_calls = 0
             self._gms_local_pages_by_hash.clear()
             self._gms_local_hashes_by_page.clear()
             self._gms_retained_order.clear()
@@ -1041,14 +1051,20 @@ def make_gms_unified_cache_class():
             acknowledged it and every rank has voted on the same identity.
             Waiting for both before releasing tokens put a daemon round trip
             and a cross-rank barrier (1.5-2 ms) on the output path whenever a
-            request crossed a page. Confirming the previous publication on the
-            next call keeps the rule but overlaps the acknowledgement with a
-            decode step. A crash in between only means the replay recomputes
-            that page.
+            request crossed a page. Confirming pending publications together a
+            few output calls later keeps the rule, overlaps the acknowledgement
+            with decode steps, and pays one barrier per batch. A crash before
+            confirmation only means the replay recomputes those pages.
             """
             if not self._gms_steady_state or not self._gms_directory.authoritative:
                 return
-            self._gms_confirm_live_prefixes()
+            self._gms_live_calls += 1
+            unconfirmed = self._gms_live_unconfirmed
+            if unconfirmed and (
+                self._gms_live_calls - unconfirmed[0][3] >= _LIVE_CONFIRM_CALLS
+                or len(unconfirmed) >= _LIVE_CONFIRM_BATCH
+            ):
+                self._gms_confirm_live_prefixes()
             page_size = int(self.page_size)
             pending_ack = []
             for req in reqs:
@@ -1057,7 +1073,10 @@ def make_gms_unified_cache_class():
                     continue
                 committed = int(getattr(req.kv, "kv_committed_len", 0))
                 sealed_len = committed // page_size * page_size
-                if sealed_len <= int(getattr(req, "_gms_published_kv_len", 0)):
+                if sealed_len <= max(
+                    int(getattr(req, "_gms_published_kv_len", 0)),
+                    int(getattr(req, "_gms_live_pending_len", 0)),
+                ):
                     continue
                 pending_ack.append((req, sealed_len))
             if not pending_ack:
@@ -1097,15 +1116,26 @@ def make_gms_unified_cache_class():
                 # Report through the confirmation vote so every rank stops
                 # together instead of one rank leaving its peers in a vote.
                 error = exc
-            self._gms_live_unconfirmed = (identity.digest(), pending_ack, error)
+            for req, sealed_len in pending_ack:
+                req._gms_live_pending_len = sealed_len
+            self._gms_live_unconfirmed.append(
+                (identity.digest(), pending_ack, error, self._gms_live_calls)
+            )
 
         def _gms_confirm_live_prefixes(self) -> None:
-            """Agree the previous live publication after its daemon ack."""
+            """Agree all pending live publications after their daemon acks."""
             unconfirmed = self._gms_live_unconfirmed
-            if unconfirmed is None:
+            if not unconfirmed:
                 return
-            self._gms_live_unconfirmed = None
-            digest, pending_ack, error = unconfirmed
+            self._gms_live_unconfirmed = []
+            combined = sha256()
+            pending_ack = []
+            error = None
+            for digest, publication, publication_error, _call in unconfirmed:
+                combined.update(digest)
+                pending_ack.extend(publication)
+                error = error or publication_error
+            digest = combined.digest()
 
             def acknowledge() -> None:
                 if error is not None:

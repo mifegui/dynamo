@@ -473,6 +473,7 @@ def test_finished_publication_uses_cpu_pages_without_device_collection(monkeypat
 
 
 def test_live_prefix_publication_seals_only_newly_committed_full_pages(monkeypatch):
+    monkeypatch.setattr(adapter, "_LIVE_CONFIRM_CALLS", 1)
     cache, allocator = _cache(monkeypatch)
     leases = {page: KVLease(page, 10 + page) for page in (3, 4, 5)}
     allocator._gms_kv_leases_by_page = leases
@@ -540,6 +541,7 @@ def test_live_prefix_publication_seals_only_newly_committed_full_pages(monkeypat
 
 
 def test_live_prefix_is_not_marked_published_without_daemon_ack(monkeypatch):
+    monkeypatch.setattr(adapter, "_LIVE_CONFIRM_CALLS", 1)
     cache, _allocator = _cache(monkeypatch)
     cache._gms_steady_state = True
     cache._gms_directory = _Directory()
@@ -566,6 +568,7 @@ def test_live_prefix_is_not_marked_published_without_daemon_ack(monkeypatch):
 
 
 def test_live_prefix_is_not_marked_published_without_tp_vote(monkeypatch):
+    monkeypatch.setattr(adapter, "_LIVE_CONFIRM_CALLS", 1)
     cache, _allocator = _cache(monkeypatch)
     cache._gms_steady_state = True
     cache._gms_directory = _Directory()
@@ -594,6 +597,7 @@ def test_live_prefix_is_not_marked_published_without_tp_vote(monkeypatch):
 
 
 def test_live_publish_failure_is_reported_through_the_vote(monkeypatch):
+    monkeypatch.setattr(adapter, "_LIVE_CONFIRM_CALLS", 1)
     """A rank that fails to publish fails the next vote, so peers stop too."""
     cache, _allocator = _cache(monkeypatch)
     cache._gms_steady_state = True
@@ -630,6 +634,59 @@ def test_live_publish_failure_is_reported_through_the_vote(monkeypatch):
 
     assert votes == [("live:ack", False)]
     assert not hasattr(req, "_gms_published_kv_len")
+
+
+def test_live_publications_are_confirmed_together(monkeypatch):
+    """Several publications share one daemon wait and one TP vote."""
+    monkeypatch.setattr(adapter, "_LIVE_CONFIRM_CALLS", 3)
+    cache, _allocator = _cache(monkeypatch)
+    cache._gms_steady_state = True
+    cache._gms_directory = _Directory()
+    published = []
+    monkeypatch.setattr(
+        cache,
+        "_publish_finished_prefix",
+        lambda key, **_kw: published.append(len(key)),
+    )
+    acknowledgements = []
+    monkeypatch.setattr(
+        cache._gms_directory,
+        "flush_deferred",
+        lambda timeout: acknowledgements.append(timeout) or True,
+    )
+    votes = []
+
+    def vote(stage, digest, operation):
+        votes.append(stage)
+        return operation()
+
+    cache._gms_tp = SimpleNamespace(transact_digest=vote)
+
+    def request(rid):
+        return SimpleNamespace(
+            rid=rid,
+            kv=SimpleNamespace(kv_committed_len=2),
+            origin_input_ids=[1, 2],
+            output_ids=[],
+            extra_key=None,
+            cache_salt=None,
+            _gms_kv_page_ids=[3],
+            finished=lambda: False,
+        )
+
+    first, second = request("a"), request("b")
+    cache._gms_publish_live_prefixes([first])
+    cache._gms_publish_live_prefixes([first, second])
+    # Pending publications are not republished while awaiting confirmation.
+    assert len(published) == 2
+    assert votes == [] and acknowledgements == []
+    assert not hasattr(first, "_gms_published_kv_len")
+
+    cache._gms_publish_live_prefixes([first, second])
+    cache._gms_publish_live_prefixes([first, second])
+    assert votes == ["live:ack"] and acknowledgements == [2.0]
+    assert first._gms_published_kv_len == second._gms_published_kv_len == 2
+    assert len(published) == 2
 
 
 def test_finished_publication_falls_back_when_captured_node_has_no_indices(
