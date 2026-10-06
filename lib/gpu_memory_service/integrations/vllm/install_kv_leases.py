@@ -444,6 +444,9 @@ def _flush_completed_frees(pool) -> None:
     pool._gms_completed_frees = None
     if not groups:
         return
+    # Queued in-flight publications reach the directory before their blocks
+    # can be released or reused.
+    _flush_inflight_publications(pool)
     batch = []
     hashes = {}
     admission_blocks = 0
@@ -621,7 +624,9 @@ def _publish_hbm_blocks(
         return False
 
 
-def _publish_completed_inflight_blocks(scheduler, scheduler_output) -> int:
+def _publish_completed_inflight_blocks(
+    scheduler, scheduler_output, *, force: bool = False
+) -> int:
     """Publish immutable full blocks after their GPU step has completed.
 
     vLLM assigns hashes while scheduling, before the corresponding CUDA work
@@ -708,16 +713,47 @@ def _publish_completed_inflight_blocks(scheduler, scheduler_output) -> int:
                 next_frontier += 1
             frontier_updates.append((request, key, next_frontier))
 
-    if candidates and not _publish_hbm_blocks(
-        pool, candidates, active=False, release_duplicates=False
+    # Queue instead of publishing every step: each publication is a daemon
+    # round trip whose send and acknowledgement compete with the scheduler
+    # for the GIL. The queue is flushed before any free (see
+    # _flush_inflight_publications), so a queued block cannot be reused.
+    pending = pool.__dict__.setdefault("_gms_inflight_pending", {})
+    for block in candidates:
+        pending.setdefault(int(block.block_id), block)
+    for request, key, next_frontier in frontier_updates:
+        request._gms_kv_publish_frontiers[key] = next_frontier
+    steps = int(getattr(pool, "_gms_inflight_steps", 0)) + 1
+    pool._gms_inflight_steps = steps
+    if pending and (
+        force
+        or steps >= _INFLIGHT_PUBLISH_STEPS
+        or len(pending) >= _INFLIGHT_PUBLISH_BLOCKS
     ):
+        _flush_inflight_publications(pool)
+    return len(candidates)
+
+
+# Completed in-flight blocks are published at least this often (engine steps)
+# or once this many are queued, and always before any block is freed.
+_INFLIGHT_PUBLISH_STEPS = 16
+_INFLIGHT_PUBLISH_BLOCKS = 64
+
+
+def _flush_inflight_publications(pool) -> int:
+    """Publish queued completed blocks; must run before blocks are freed."""
+    pending = getattr(pool, "_gms_inflight_pending", None)
+    pool._gms_inflight_steps = 0
+    if not pending:
+        return 0
+    blocks = list(pending.values())
+    if not _publish_hbm_blocks(pool, blocks, active=False, release_duplicates=False):
+        # Keep them queued: the next flush retries, as the per-step path did.
         logger.warning(
             "[GMS-KVLease] deferred in-flight HBM publication was not accepted"
         )
         return 0
-    for request, key, next_frontier in frontier_updates:
-        request._gms_kv_publish_frontiers[key] = next_frontier
-    return len(candidates)
+    pending.clear()
+    return len(blocks)
 
 
 def _drop_directory_hashes(directory, entries) -> None:
@@ -1651,6 +1687,7 @@ def _free_blocks(self, ordered_blocks, *, admission_blocks=None):
     if pending is not None:
         pending.append(blocks_list)
         return
+    _flush_inflight_publications(self)
     free_blocks = []
     for block in blocks_list:
         block.ref_cnt -= 1
@@ -1866,10 +1903,12 @@ def _build_gms_block_pool_class(block_pool_class):
             return _free_blocks(self, ordered_blocks)
 
         def evict_blocks(self, block_ids: set[int]) -> None:
+            _flush_inflight_publications(self)
             _demote_sealed_blocks_for_mutation(self, block_ids)
             return super().evict_blocks(block_ids)
 
         def reset_prefix_cache(self) -> bool:
+            _flush_inflight_publications(self)
             return _reset_prefix_cache(
                 self,
                 super().get_num_free_blocks(),
