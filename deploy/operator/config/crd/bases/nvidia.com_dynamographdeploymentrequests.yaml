@@ -603,6 +603,7 @@ spec:
                     gpuSku:
                       allOf:
                         - enum:
+                            - vr200_hecate
                             - gb200_sxm
                             - gb10
                             - b300_sxm
@@ -622,6 +623,7 @@ spec:
                             - mi200
                             - mi300
                         - enum:
+                            - vr200_hecate
                             - gb200_sxm
                             - gb10
                             - b300_sxm

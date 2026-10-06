@@ -476,6 +476,23 @@ func TestInferHardwareSystem(t *testing.T) {
 			expected: "",
 		},
 
+		// --- Rubin ---
+		{
+			name:     "VR200 (DCGM format)",
+			input:    "NVIDIA VR200",
+			expected: nvidiacomv1beta1.GPUSKUTypeVR200Hecate,
+		},
+		{
+			name:     "VR200 Hecate",
+			input:    "NVIDIA VR200 HECATE",
+			expected: nvidiacomv1beta1.GPUSKUTypeVR200Hecate,
+		},
+		{
+			name:     "VR2000 should not match VR200",
+			input:    "NVIDIA VR2000",
+			expected: "",
+		},
+
 		// --- Blackwell ---
 		{
 			name:     "GB200 SXM",
