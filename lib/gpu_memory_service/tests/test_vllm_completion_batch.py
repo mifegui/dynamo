@@ -176,7 +176,7 @@ def test_connector_eviction_demotes_sealed_block_before_native_mutation(monkeypa
             events.append("flush")
             return True
 
-        def ensure_hbm_capacity(self, required, *, eligible_slot_ids):
+        def ensure_hbm_capacity(self, required, *, eligible_slot_ids, engine_id=None):
             events.append(("retire", required, eligible_slot_ids))
             return [
                 {
