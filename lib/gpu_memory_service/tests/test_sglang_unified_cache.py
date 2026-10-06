@@ -526,10 +526,17 @@ def test_live_prefix_publication_seals_only_newly_committed_full_pages(monkeypat
     req.kv.kv_committed_len = 6
     cache._gms_publish_live_prefixes([req])
 
+    # Published now, confirmed by the next output: no daemon wait or TP
+    # barrier on the output path that publishes.
     assert len(cache._gms_directory.published) == 3
     assert cache._gms_directory.published[-1]["slot_ids"] == [5]
+    assert acknowledgements == [2.0]
+    assert req._gms_published_kv_len == 4
+
+    cache._gms_publish_live_prefixes([req])
     assert acknowledgements == [2.0, 2.0]
     assert len(votes) == 2
+    assert req._gms_published_kv_len == 6
 
 
 def test_live_prefix_is_not_marked_published_without_daemon_ack(monkeypatch):
@@ -548,6 +555,10 @@ def test_live_prefix_is_not_marked_published_without_daemon_ack(monkeypatch):
         finished=lambda: False,
     )
 
+    cache._gms_tp = SimpleNamespace(
+        transact_digest=lambda _stage, _digest, operation: operation()
+    )
+    cache._gms_publish_live_prefixes([req])
     with pytest.raises(RuntimeError, match="acknowledging live SGLang"):
         cache._gms_publish_live_prefixes([req])
 
@@ -575,9 +586,49 @@ def test_live_prefix_is_not_marked_published_without_tp_vote(monkeypatch):
         finished=lambda: False,
     )
 
+    cache._gms_publish_live_prefixes([req])
     with pytest.raises(RuntimeError, match="peer rank"):
         cache._gms_publish_live_prefixes([req])
 
+    assert not hasattr(req, "_gms_published_kv_len")
+
+
+def test_live_publish_failure_is_reported_through_the_vote(monkeypatch):
+    """A rank that fails to publish fails the next vote, so peers stop too."""
+    cache, _allocator = _cache(monkeypatch)
+    cache._gms_steady_state = True
+    cache._gms_directory = _Directory()
+
+    def broken_publish(*_args, **_kwargs):
+        raise RuntimeError("local publish failed")
+
+    monkeypatch.setattr(cache, "_publish_finished_prefix", broken_publish)
+    votes = []
+
+    def vote(stage, _digest, operation):
+        try:
+            operation()
+        except Exception:
+            votes.append((stage, False))
+            raise RuntimeError("SGLang GMS TP transaction failed") from None
+        votes.append((stage, True))
+
+    cache._gms_tp = SimpleNamespace(transact_digest=vote)
+    req = SimpleNamespace(
+        kv=SimpleNamespace(kv_committed_len=2),
+        origin_input_ids=[1, 2],
+        output_ids=[],
+        extra_key=None,
+        cache_salt=None,
+        _gms_kv_page_ids=[3],
+        finished=lambda: False,
+    )
+
+    cache._gms_publish_live_prefixes([req])
+    with pytest.raises(RuntimeError, match="TP transaction failed"):
+        cache._gms_publish_live_prefixes([req])
+
+    assert votes == [("live:ack", False)]
     assert not hasattr(req, "_gms_published_kv_len")
 
 
