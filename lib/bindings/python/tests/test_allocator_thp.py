@@ -51,8 +51,13 @@ print(json.dumps({
 
 
 def _probe(allow_thp: str | None) -> dict:
-    # mimalloc matches its variables case-insensitively.
-    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("MIMALLOC_")}
+    # mimalloc matches its variables case-insensitively. A jemalloc preload would take the
+    # extension's Rust heap off mimalloc.
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k != "LD_PRELOAD" and not k.upper().startswith("MIMALLOC_")
+    }
     if allow_thp is not None:
         env["MIMALLOC_ALLOW_THP"] = allow_thp
     result = subprocess.run(
@@ -86,7 +91,6 @@ def _strict_overcommit() -> bool:
     reason="mimalloc never advises arenas it reserves under strict overcommit",
 )
 def test_mimalloc_allow_thp_still_opts_in():
-    # dynamo.frontend sets this before importing the extension.
     probe = _probe("1")
 
     assert probe["advised_mib"] >= ARENA_MIB, probe
